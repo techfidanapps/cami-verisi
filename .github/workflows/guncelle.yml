@@ -1,0 +1,88 @@
+name: Cami verisini güncelle
+
+on:
+  schedule:
+    - cron: "0 2 3 * *"   # Her ayın 3'ü, 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      bolgeler:
+        description: "Geofabrik bölgeleri (boşlukla). Boş = tüm dünya."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  uret:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    env:
+      # Antarktika bilerek yok. Rusya Geofabrik'te ayrı üst bölge.
+      TUM_BOLGELER: >-
+        africa asia australia-oceania central-america europe
+        north-america south-america russia
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Araçları kur
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q osmium-tool
+          pip install osmium
+
+      - name: Çalışma alanı (büyük disk /mnt)
+        run: |
+          sudo mkdir -p /mnt/osm && sudo chown "$USER" /mnt/osm
+          df -h / /mnt
+
+      - name: Bölgeleri indir ve camileri süz
+        working-directory: /mnt/osm
+        run: |
+          BOLGELER="${{ github.event.inputs.bolgeler }}"
+          [ -z "$BOLGELER" ] && BOLGELER="$TUM_BOLGELER"
+          for b in $BOLGELER; do
+            ad=$(echo "$b" | tr '/' '_')
+            echo "::group::$b"
+            curl -fsSL --retry 3 -o ham.pbf "https://download.geofabrik.de/${b}-latest.osm.pbf"
+            ls -lh ham.pbf
+            osmium tags-filter ham.pbf nwr/religion=muslim nwr/building=mosque -o "f_${ad}.pbf" --overwrite
+            rm -f ham.pbf
+            ls -lh "f_${ad}.pbf"
+            echo "::endgroup::"
+          done
+
+      - name: Kareleri üret
+        run: |
+          DENEME=""
+          [ -n "${{ github.event.inputs.bolgeler }}" ] && DENEME="--deneme"
+          python uret.py --cikti site $DENEME /mnt/osm/f_*.pbf
+          cp index.html site/
+          echo "Dosya sayısı: $(ls site/t | wc -l)"; du -sh site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  # Elle bölge seçilerek yapılan deneme çalıştırmaları yayınlanmaz;
+  # yoksa dünya verisi birkaç ülkelik test verisiyle ezilirdi.
+  yayinla:
+    needs: uret
+    if: github.event.inputs.bolgeler == ''
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.dagit.outputs.page_url }}
+    steps:
+      - id: dagit
+        uses: actions/deploy-pages@v4
