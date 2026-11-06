@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   uret:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 340
     env:
       # Antarktika bilerek yok. Rusya Geofabrik'te ayrı üst bölge.
@@ -29,9 +29,9 @@ jobs:
         africa asia australia-oceania central-america europe
         north-america south-america russia
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -79,7 +79,7 @@ jobs:
   yayinla:
     needs: uret
     if: github.event.inputs.bolgeler == ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.dagit.outputs.page_url }}
